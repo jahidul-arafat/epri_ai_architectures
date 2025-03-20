@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EPRI Distribution Grid Modeler Assistant</title>
+  <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis.min.js"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/vis/4.21.0/vis-network.min.css" rel="stylesheet" type="text/css"/>
+  <script src="grid_modeler.min.js" defer></script>
+  <link href="styles.css" rel="stylesheet" type="text/css"/>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-left">
+      <h1>EPRI Distribution Grid Modeler Assistant</h1>
+      <p>By Jahidul Arafat, (ex-L3) Senior Solution Architect and Presidential Graduate Research Fellow, Auburn University, USA</p>
+      <p><a href="https://www.linkedin.com/in/jahidul-arafat-presidential-fellow-phd-student-791a7490/" target="_blank" rel="noopener noreferrer">https://www.linkedin.com/in/jahidul-arafat-presidential-fellow-phd-student-791a7490/</a></p>
+    </div>
+    <div class="header-right">
+      <button class="button-secondary" onclick="toggleCustomThresholds()">
+        <span>⚙️</span> Thresholds
+      </button>
+      <button class="button flashing-button" onclick="initializeScenarioComparison()">
+        <span>📊</span> Compare Scenarios
+      </button>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="left-column">
+      <!-- Advanced Search Panel (new) -->
+      <div class="panel" id="advancedSearchPanel">
+        <h2 class="panel-title">Search & Filter</h2>
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="Search nodes by name, type, equipment...">
+          <button class="button" id="searchButton">Search</button>
+        </div>
+
+        <div class="filter-container">
+          <div class="filter-group">
+            <label><strong>Filter by Voltage:</strong></label>
+            <div class="range-slider">
+              <input type="number" id="minVoltage" placeholder="Min" value="0.94" min="0.9" max="1.1" step="0.01">
+              <span>to</span>
+              <input type="number" id="maxVoltage" placeholder="Max" value="1.06" min="0.9" max="1.1" step="0.01">
+            </div>
+          </div>
+
+          <div class="filter-group">
+            <label><strong>Filter by Loading:</strong></label>
+            <div class="range-slider">
+              <input type="number" id="minLoading" placeholder="Min" value="0" min="0" max="100" step="1">
+              <span>to</span>
+              <input type="number" id="maxLoading" placeholder="Max" value="100" min="0" max="100" step="1">
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label><strong>Equipment Type:</strong></label>
+          <div class="checkbox-group">
+            <label><input type="checkbox" name="equipmentType" value="switch" checked> Switches</label>
+            <label><input type="checkbox" name="equipmentType" value="capacitor" checked> Capacitors</label>
+            <label><input type="checkbox" name="equipmentType" value="regulator" checked> Regulators</label>
+            <label><input type="checkbox" name="equipmentType" value="recloser" checked> Reclosers</label>
+            <label><input type="checkbox" name="equipmentType" value="der" checked> DERs</label>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button class="button button-secondary" id="clearFilters">Clear Filters</button>
+          <button class="button" id="applyFilters">Apply Filters</button>
+        </div>
+
+        <div id="filterResults" style="display: none;">
+          <h4>Results</h4>
+          <div id="resultsSummary"></div>
+        </div>
+      </div>
+
+      <!-- Simulation Data Panel -->
+      <div class="panel">
+        <h2 class="panel-title">Simulation Data</h2>
+
+        <div class="tabs">
+          <div class="tab active" data-tab="upload">Upload Simulation</div>
+          <div class="tab" data-tab="sample">Sample Simulations</div>
+          <div class="tab" data-tab="parameters">Parameters</div>
+        </div>
+
+        <div class="tab-content active" id="upload-tab">
+          <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📤</div>
+            <h3>Drag & Drop Simulation Files</h3>
+            <p>Support for OpenDSS, GridLAB-D, and PowerFactory exports (.csv, .xml, .json)</p>
+            <input type="file" id="fileInput" style="display: none;">
+            <button class="button" onclick="document.getElementById('fileInput').click()">Select Files</button>
+          </div>
+        </div>
+
+        <div class="tab-content" id="sample-tab">
+          <h3>Sample Simulations</h3>
+          <table class="parameter-table">
+            <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Description</th>
+              <th>Action</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+              <td>IEEE 13-Node Test Feeder</td>
+              <td>Voltage Profile</td>
+              <td>Standard test case with voltage violations</td>
+              <td><button class="button" onclick="loadSampleSimulation('ieee13')">Load</button></td>
+            </tr>
+            <tr>
+              <td>PV Integration Study</td>
+              <td>Impact Analysis</td>
+              <td>High penetration PV with voltage rise issues</td>
+              <td><button class="button" onclick="loadSampleSimulation('pv_impact')">Load</button></td>
+            </tr>
+            <tr>
+              <td>Urban Distribution Network</td>
+              <td>Load Flow</td>
+              <td>Dense urban network with capacity constraints</td>
+              <td><button class="button" onclick="loadSampleSimulation('urban_network')">Load</button></td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="tab-content" id="parameters-tab">
+          <h3>Simulation Parameters</h3>
+          <div class="simulation-settings">
+            <label>
+              <input type="checkbox" id="enableTimeSeries">
+              Enable Time-Series Simulation
+            </label>
+            <div id="timeSeriesControls" style="display: none;">
+              <!-- Time series controls will be added here by JavaScript -->
+            </div>
+          </div>
+          <table class="parameter-table">
+            <thead>
+            <tr>
+              <th>Parameter</th>
+              <th>Value</th>
+              <th>Status</th>
+            </tr>
+            </thead>
+            <tbody id="parameterTableBody">
+            <tr>
+              <td>
+                Base Voltage
+                <div class="tooltip">
+                  <span class="icon">i</span>
+                  <span class="text">The nominal voltage level at which the distribution system operates.</span>
+                </div>
+              </td>
+              <td>
+                12.47 kV
+                <div class="parameter-progress">
+                  <div class="parameter-progress-bar" style="width: 60%; background-color: #4caf50;"></div>
+                </div>
+              </td>
+              <td><span class="status ok">OK</span></td>
+            </tr>
+            <tr>
+              <td>
+                Power Factor
+                <div class="tooltip">
+                  <span class="icon">i</span>
+                  <span class="text">Ratio of real power to apparent power. Indicates efficiency of power utilization.</span>
+                </div>
+              </td>
+              <td>
+                0.92
+                <div class="parameter-progress">
+                  <div class="parameter-progress-bar" style="width: 75%; background-color: #fbc02d;"></div>
+                </div>
+              </td>
+              <td><span class="status warning">Warning</span></td>
+            </tr>
+            <tr>
+              <td>
+                Voltage Drop
+                <div class="tooltip">
+                  <span class="icon">i</span>
+                  <span class="text">Percentage reduction in voltage from substation to end of feeder.</span>
+                </div>
+              </td>
+              <td>
+                4.8%
+                <div class="parameter-progress">
+                  <div class="parameter-progress-bar" style="width: 85%; background-color: #fbc02d;"></div>
+                </div>
+              </td>
+              <td><span class="status warning">Warning</span></td>
+            </tr>
+            <tr>
+              <td>
+                Peak Load
+                <div class="tooltip">
+                  <span class="icon">i</span>
+                  <span class="text">Maximum power demand on the feeder, measured in MVA.</span>
+                </div>
+              </td>
+              <td>
+                3.2 MVA
+                <div class="parameter-progress">
+                  <div class="parameter-progress-bar" style="width: 67%; background-color: #4caf50;"></div>
+                </div>
+              </td>
+              <td><span class="status ok">OK</span></td>
+            </tr>
+            <tr>
+              <td>
+                Line Losses
+                <div class="tooltip">
+                  <span class="icon">i</span>
+                  <span class="text">Power lost as heat in conductors due to current flow, measured in kW.</span>
+                </div>
+              </td>
+              <td>
+                87 kW
+                <div class="parameter-progress">
+                  <div class="parameter-progress-bar" style="width: 45%; background-color: #4caf50;"></div>
+                </div>
+              </td>
+              <td><span class="status ok">OK</span></td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="action-bar">
+          <button class="button button-secondary">Reset</button>
+          <button class="button" id="analyzeButton">Analyze Simulation</button>
+        </div>
+      </div>
+
+      <!-- Network Visualization Panel -->
+      <div class="panel">
+        <h2 class="panel-title">
+          Distribution Network Visualization
+          <div class="actions">
+            <button class="button-icon" title="Toggle Physics" onclick="togglePhysics()">🔄</button>
+            <button class="button-icon" title="Toggle View Mode" onclick="toggleHierarchicalView()">🔀</button>
+            <button class="button-icon" title="Download Image" onclick="exportNetworkImage()">📷</button>
+          </div>
+        </h2>
+        <div id="networkContainer"></div>
+
+        <!-- Selected Node Details Panel (new) -->
+        <div id="nodeDetailsPanel" class="node-details-panel" style="display: none;">
+          <p>Select a node to view details</p>
+        </div>
+
+        <h3 class="panel-title" style="margin-top: 20px;">
+          Voltage Profile
+          <div class="actions">
+            <button class="button-icon" title="Export Chart" onclick="addChartExportButton()">💾</button>
+          </div>
+        </h3>
+        <div id="voltageProfileChart"></div>
+        <!-- Add this HTML after the Voltage Profile chart div in draft.html -->
+        <div class="panel" id="liveEventsPanel">
+          <h2 class="panel-title">
+            Live Events
+            <div class="actions">
+              <button class="button-icon" title="Pause Events" id="toggleEvents">⏸️</button>
+              <button class="button-icon" title="Clear Events" id="clearEvents">🗑️</button>
+            </div>
+          </h2>
+          <div id="eventLogContainer" class="events-container">
+            <!-- Initial events -->
+            <div class="event-item voltage">
+              <span class="event-time">7:04:08 PM</span>
+              <span class="event-description">Voltage fluctuation detected at node N7</span>
+            </div>
+            <div class="event-item voltage">
+              <span class="event-time">7:04:00 PM</span>
+              <span class="event-description">Voltage fluctuation detected at node N7</span>
+            </div>
+            <div class="event-item voltage">
+              <span class="event-time">7:03:52 PM</span>
+              <span class="event-description">Voltage fluctuation detected at node N7</span>
+            </div>
+            <div class="event-item der">
+              <span class="event-time">7:03:35 PM</span>
+              <span class="event-description">DER output variability detected at node N12</span>
+            </div>
+            <div class="event-item communication">
+              <span class="event-time">7:03:15 PM</span>
+              <span class="event-description">Communication timeout with recloser R2</span>
+            </div>
+          </div>
+
+          <div class="events-filter">
+            <label><input type="checkbox" class="event-filter" value="voltage" checked> Voltage</label>
+            <label><input type="checkbox" class="event-filter" value="der" checked> DER</label>
+            <label><input type="checkbox" class="event-filter" value="communication" checked> Communication</label>
+            <label><input type="checkbox" class="event-filter" value="protection" checked> Protection</label>
+            <label><input type="checkbox" class="event-filter" value="loading" checked> Loading</label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="right-column">
+      <!-- AI Interpretation Panel -->
+      <div class="panel">
+        <h2 class="panel-title">AI Interpretation</h2>
+
+        <div class="loading" id="loadingIndicator">
+          <div class="spinner"></div>
+          <p>Analyzing simulation data...</p>
+        </div>
+
+        <div class="interpretation" id="interpretationResults">
+          <div class="interpretation-item">
+            <h4>Voltage Profile Analysis</h4>
+            <p>The simulation shows voltage drops exceeding 4% on the extreme end of the feeder. This is within ANSI C84.1 Range A limits but approaching Range B at peak load conditions. Consider implementing voltage regulation at node N7.</p>
+          </div>
+
+          <div class="interpretation-item">
+            <h4>Power Factor Improvement</h4>
+            <p>Power factor of 0.92 indicates potential for improvement. Installing 450 kVAR of capacitive compensation would improve power factor to 0.98 and reduce losses by approximately 12%.</p>
+          </div>
+
+          <div class="interpretation-item">
+            <h4>DER Integration Impact</h4>
+            <p>The current network can accommodate up to 1.5 MW of additional distributed generation without voltage violations, primarily at nodes N4, N9, and N12.</p>
+          </div>
+
+          <div class="reference">
+            <strong>Relevant EPRI Research:</strong>
+            <a href="#">Technical Report 3002021698: Voltage Management Guidelines</a>
+          </div>
+
+          <div class="reference">
+            <strong>Relevant EPRI Research:</strong>
+            <a href="#">Technical Brief 3002023451: Power Factor Correction Best Practices</a>
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button class="button button-secondary">Ask Question</button>
+          <button class="button">Generate Report</button>
+        </div>
+      </div>
+
+      <!-- DER Integration Analysis Panel (new) -->
+      <div class="panel" id="derIntegrationPanel">
+        <h2 class="panel-title">DER Integration Analysis</h2>
+
+        <div>
+          <label><strong>Add DER Scenario:</strong></label>
+          <div style="display: flex; gap: 10px; margin-top: 5px; margin-bottom: 15px;">
+            <select id="derType" style="flex-grow: 1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+              <option value="pv">Solar PV</option>
+              <option value="wind">Wind Turbine</option>
+              <option value="battery">Battery Storage</option>
+              <option value="evcharger">EV Charging</option>
+            </select>
+            <button class="button" id="addDER">Add</button>
+          </div>
+        </div>
+
+        <h4>Existing DERs</h4>
+        <table class="parameter-table">
+          <thead>
+          <tr>
+            <th>Location</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th>Action</th>
+          </tr>
+          </thead>
+          <tbody id="derTableBody">
+          <tr>
+            <td>N9</td>
+            <td>Solar PV</td>
+            <td>200 kW</td>
+            <td><button class="button button-secondary button-small">Edit</button></td>
+          </tr>
+          <tr>
+            <td>N12</td>
+            <td>Solar PV</td>
+            <td>350 kW</td>
+            <td><button class="button button-secondary button-small">Edit</button></td>
+          </tr>
+          </tbody>
+        </table>
+
+        <h4>Hosting Capacity Analysis</h4>
+        <div style="background-color: #f5f7fa; border-radius: 4px; padding: 15px; margin-bottom: 15px;">
+          <div style="margin-bottom: 10px;">
+            <strong>Maximum Hosting Capacity:</strong> 1.85 MW
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong>Limiting Factor:</strong> Voltage Rise at Node N12
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong>Recommended Locations:</strong> N4, N10, N7
+          </div>
+          <div>
+            <strong>Integration Measures:</strong> Volt-VAR control, Conductor upgrades at S3-S4
+          </div>
+        </div>
+
+        <div class="action-bar">
+          <button class="button" id="derReport">Generate Hosting Capacity Report</button>
+        </div>
+      </div>
+
+      <!-- Recommended Actions Panel -->
+      <div class="panel">
+        <h2 class="panel-title">Recommended Actions</h2>
+
+        <div class="interpretation-item">
+          <h4>Short-term Recommendations</h4>
+          <p>1. Adjust LTC tap position at substation from 1.025 to 1.0375 pu</p>
+          <p>2. Verify proper operation of capacitor bank at node N8</p>
+          <p>3. Check connection impedance at node N11 which shows abnormal values</p>
+        </div>
+
+        <div class="interpretation-item">
+          <h4>Long-term Planning</h4>
+          <p>1. Install 450 kVAR switched capacitor bank at node N7</p>
+          <p>2. Consider voltage regulator for lateral branch to nodes N9-N13</p>
+          <p>3. Reinforce conductor on main feeder segment S4-S5 to reduce voltage drop</p>
+        </div>
+      </div>
+
+      <!-- Placeholder for Scenario Comparison Panel (will be added via JS) -->
+      <div id="scenarioComparisonPanelPlaceholder"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Custom Threshold Settings Modal (Hidden by default) -->
+<div id="thresholdSettingsModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+  <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: white; padding: 20px; border-radius: 8px; width: 400px;">
+    <h3 style="margin-top: 0; color: #0f4880;">Customize Threshold Settings</h3>
+
+    <div style="margin-bottom: 15px;">
+      <label style="display: block; margin-bottom: 5px; font-weight: bold;">Voltage Upper Limit (pu):</label>
+      <input type="number" id="voltageUpperThreshold" value="1.05" min="1.0" max="1.1" step="0.01" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+    </div>
+
+    <div style="margin-bottom: 15px;">
+      <label style="display: block; margin-bottom: 5px; font-weight: bold;">Voltage Lower Limit (pu):</label>
+      <input type="number" id="voltageLowerThreshold" value="0.95" min="0.9" max="1.0" step="0.01" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+    </div>
+
+    <div style="margin-bottom: 15px;">
+      <label style="display: block; margin-bottom: 5px; font-weight: bold;">Voltage Warning Upper (pu):</label>
+      <input type="number" id="voltageWarningUpper" value="1.03" min="1.0" max="1.1" step="0.01" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+    </div>
+
+    <div style="margin-bottom: 15px;">
+      <label style="display: block; margin-bottom: 5px; font-weight: bold;">Voltage Warning Lower (pu):</label>
+      <input type="number" id="voltageWarningLower" value="0.97" min="0.9" max="1.0" step="0.01" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+    </div>
+
+    <div style="margin-bottom: 15px;">
+      <label style="display: block; margin-bottom: 5px; font-weight: bold;">Loading High Threshold (%):</label>
+      <input type="number" id="loadingHighThreshold" value="90" min="50" max="100" step="1" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+    </div>
+
+    <div style="margin-bottom: 15px;">
+      <label style="display: block; margin-bottom: 5px; font-weight: bold;">Loading Warning Threshold (%):</label>
+      <input type="number" id="loadingWarningThreshold" value="80" min="50" max="100" step="1" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+    </div>
+
+    <div style="margin-bottom: 15px;">
+      <label style="display: block; margin-bottom: 5px; font-weight: bold;">Power Factor Low Threshold:</label>
+      <input type="number" id="powerFactorLowThreshold" value="0.9" min="0.8" max="1.0" step="0.01" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+      <button id="resetThresholds" class="button button-secondary">Reset to Defaults</button>
+      <button id="saveThresholds" class="button">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Custom JavaScript to enable the new features -->
+<script>
+  // Function to toggle threshold settings modal
+  function toggleCustomThresholds() {
+    const modal = document.getElementById('thresholdSettingsModal');
+    if (modal.style.display === 'none') {
+      modal.style.display = 'block';
+
+      // Load current threshold values
+      document.getElementById('voltageUpperThreshold').value = STATE.customThresholds.voltageUpper;
+      document.getElementById('voltageLowerThreshold').value = STATE.customThresholds.voltageLower;
+      document.getElementById('voltageWarningUpper').value = STATE.customThresholds.voltageWarningUpper;
+      document.getElementById('voltageWarningLower').value = STATE.customThresholds.voltageWarningLower;
+      document.getElementById('loadingHighThreshold').value = STATE.customThresholds.loadingHigh;
+      document.getElementById('loadingWarningThreshold').value = STATE.customThresholds.loadingWarning;
+      document.getElementById('powerFactorLowThreshold').value = STATE.customThresholds.powerFactorLow;
+    } else {
+      modal.style.display = 'none';
+    }
+  }
+
+  // Add event listeners for the threshold settings modal
+  document.addEventListener('DOMContentLoaded', function() {
+    // Close modal when clicking outside
+    document.getElementById('thresholdSettingsModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        this.style.display = 'none';
+      }
+    });
+
+    // Save threshold settings
+    document.getElementById('saveThresholds').addEventListener('click', function() {
+      STATE.customThresholds.voltageUpper = parseFloat(document.getElementById('voltageUpperThreshold').value);
+      STATE.customThresholds.voltageLower = parseFloat(document.getElementById('voltageLowerThreshold').value);
+      STATE.customThresholds.voltageWarningUpper = parseFloat(document.getElementById('voltageWarningUpper').value);
+      STATE.customThresholds.voltageWarningLower = parseFloat(document.getElementById('voltageWarningLower').value);
+      STATE.customThresholds.loadingHigh = parseFloat(document.getElementById('loadingHighThreshold').value);
+      STATE.customThresholds.loadingWarning = parseFloat(document.getElementById('loadingWarningThreshold').value);
+      STATE.customThresholds.powerFactorLow = parseFloat(document.getElementById('powerFactorLowThreshold').value);
+
+      // Apply new thresholds to visualization
+      initializeNetwork(STATE.currentSimulation);
+      initializeVoltageChart(STATE.currentSimulation);
+
+      // Close modal
+      document.getElementById('thresholdSettingsModal').style.display = 'none';
+
+      // Show confirmation
+      showToast('Threshold settings updated successfully', 'info');
+    });
+
+    // Reset thresholds to defaults
+    document.getElementById('resetThresholds').addEventListener('click', function() {
+      // Reset to default values
+      STATE.customThresholds = {...CONFIG.thresholds};
+
+      // Update form fields
+      document.getElementById('voltageUpperThreshold').value = CONFIG.thresholds.voltageUpper;
+      document.getElementById('voltageLowerThreshold').value = CONFIG.thresholds.voltageLower;
+      document.getElementById('voltageWarningUpper').value = CONFIG.thresholds.voltageWarningUpper;
+      document.getElementById('voltageWarningLower').value = CONFIG.thresholds.voltageWarningLower;
+      document.getElementById('loadingHighThreshold').value = CONFIG.thresholds.loadingHigh;
+      document.getElementById('loadingWarningThreshold').value = CONFIG.thresholds.loadingWarning;
+      document.getElementById('powerFactorLowThreshold').value = CONFIG.thresholds.powerFactorLow;
+    });
+
+    // Time series checkbox event listener
+    document.getElementById('enableTimeSeries').addEventListener('change', function() {
+      const controls = document.getElementById('timeSeriesControls');
+      controls.style.display = this.checked ? 'block' : 'none';
+      STATE.timeSeriesEnabled = this.checked;
+
+      if (this.checked) {
+        initializeTimeSeriesControls(() => {
+          // Redraw charts with time series data
+          initializeVoltageChart(STATE.currentSimulation, { static: true });
+        });
+      }
+    });
+  });
+
+  // Function to toggle physics simulation
+  function togglePhysics() {
+    const network = window.networkInstance;
+    if (network) {
+      const options = network.physics.options;
+      options.enabled = !options.enabled;
+      network.setOptions({ physics: options });
+      showToast(options.enabled ? 'Physics simulation enabled' : 'Physics simulation disabled', 'info');
+    }
+  }
+
+  // Function to toggle hierarchical view
+  function toggleHierarchicalView() {
+    if (STATE.currentSimulation) {
+      // Toggle hierarchical layout
+      const options = {
+        hierarchical: !STATE.hierarchicalView,
+        physics: false
+      };
+
+      STATE.hierarchicalView = !STATE.hierarchicalView;
+      initializeNetwork(STATE.currentSimulation, options);
+      showToast(STATE.hierarchicalView ? 'Hierarchical view enabled' : 'Free layout enabled', 'info');
+    }
+  }
+
+  // Function to export network as image
+  function exportNetworkImage() {
+    const network = window.networkInstance;
+    if (network) {
+      const canvas = network.canvas.frame.canvas;
+      const dataUrl = canvas.toDataURL('image/png');
+
+      // Create temporary link to download the image
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `network_${STATE.activeScenario}_${new Date().toISOString().slice(0, 10)}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  }
+
+  // Initialize advanced features when the page loads
+  document.addEventListener('DOMContentLoaded', function() {
+    // Initialize node details panel
+    const detailsPanel = document.getElementById('nodeDetailsPanel');
+    if (detailsPanel) {
+      detailsPanel.style.display = 'block';
+    }
+
+    // Initialize DER panel buttons
+    const addDERButton = document.getElementById('addDER');
+    if (addDERButton) {
+      addDERButton.addEventListener('click', function() {
+        showAddDERDialog();
+      });
+    }
+
+    const derReportButton = document.getElementById('derReport');
+    if (derReportButton) {
+      derReportButton.addEventListener('click', function() {
+        showToast('Generating hosting capacity report...', 'info');
+      });
+    }
+
+    // Set up search and filter functionality
+    const searchButton = document.getElementById('searchButton');
+    if (searchButton) {
+      searchButton.addEventListener('click', function() {
+        const searchTerm = document.getElementById('searchInput').value.trim();
+        if (searchTerm && searchTerm.length >= 2) {
+          const network = window.networkInstance;
+          if (network && network.searchNodes) {
+            network.searchNodes(searchTerm);
+          }
+        }
+      });
+    }
+
+    const applyFiltersButton = document.getElementById('applyFilters');
+    if (applyFiltersButton) {
+      applyFiltersButton.addEventListener('click', function() {
+        const minVoltage = parseFloat(document.getElementById('minVoltage').value) || 0.9;
+        const maxVoltage = parseFloat(document.getElementById('maxVoltage').value) || 1.1;
+        const minLoading = parseFloat(document.getElementById('minLoading').value) || 0;
+        const maxLoading = parseFloat(document.getElementById('maxLoading').value) || 100;
+
+        // Get selected equipment types
+        const selectedEquipment = Array.from(document.querySelectorAll('input[name="equipmentType"]:checked'))
+                .map(cb => cb.value);
+
+        // Apply filters
+        const network = window.networkInstance;
+        if (network) {
+          if (network.filterByVoltage) {
+            network.filterByVoltage(minVoltage, maxVoltage);
+          }
+
+          // Show filter results
+          document.getElementById('filterResults').style.display = 'block';
+
+          // Update results summary using dummy data (in a real app, use actual filter results)
+          document.getElementById('resultsSummary').innerHTML = `
+            <div class="stats-box">
+              <div class="stat-item">
+                <div class="stat-value" style="color: #d32f2f;">3</div>
+                <div class="stat-label">Voltage Violations</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value" style="color: #fbc02d;">7</div>
+                <div class="stat-label">Warning Conditions</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value" style="color: #4caf50;">18</div>
+                <div class="stat-label">Normal Conditions</div>
+              </div>
+            </div>
+          `;
+        }
+      });
+    }
+
+    const clearFiltersButton = document.getElementById('clearFilters');
+    if (clearFiltersButton) {
+      clearFiltersButton.addEventListener('click', function() {
+        // Reset all filter values
+        document.getElementById('searchInput').value = '';
+        document.getElementById('minVoltage').value = '0.94';
+        document.getElementById('maxVoltage').value = '1.06';
+        document.getElementById('minLoading').value = '0';
+        document.getElementById('maxLoading').value = '100';
+
+        // Check all equipment checkboxes
+        document.querySelectorAll('input[name="equipmentType"]').forEach(cb => {
+          cb.checked = true;
+        });
+
+        // Hide results
+        document.getElementById('filterResults').style.display = 'none';
+
+        // Reset network selection
+        const network = window.networkInstance;
+        if (network) {
+          network.selectNodes([]);
+          network.selectEdges([]);
+        }
+      });
+    }
+  });
+</script>
+
+</body>
+</html>
